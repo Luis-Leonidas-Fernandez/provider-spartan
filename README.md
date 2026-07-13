@@ -1,3 +1,12 @@
+<p align="center">
+  <img src="./asset/spartan_log.png" alt="Provider Spartan" width="360">
+</p>
+
+<p align="center">
+  <strong>Provider Spartan</strong><br />
+  Reusable provider gateway for AI subscriptions, local CLI runtimes and OpenAI-compatible apps.
+</p>
+
 # provider-gateway
 
 > Capa reusable para conectar apps con múltiples providers de IA, exponer un gateway OpenAI-compatible y montar autenticación de suscripciones/cuentas sin levantar un servidor aparte.
