@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Local runtime state
+.provider-gateway/
+provider_gateway.db
+tmp_oauth_repro.db
+tmp_oauth_repro2.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Build / coverage
+dist/
+coverage/
+
+# OS / editor noise
+.DS_Store
+*.log
+

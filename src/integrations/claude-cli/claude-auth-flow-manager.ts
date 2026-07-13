@@ -1,0 +1,236 @@
+import { EventEmitter } from "node:events";
+import { createId } from "../../shared/id/id.js";
+import { nowIso } from "../../shared/date/date.js";
+import { redactClaudeCliOutput } from "./claude-cli-redaction.js";
+import type { ClaudeCliStatusSnapshot } from "./claude-cli.types.js";
+import type {
+  ClaudeAuthEvent,
+  ClaudeAuthFlowManagerPort,
+  ClaudeAuthFlowSnapshot,
+  ClaudeInteractiveProcess,
+  ClaudeInteractiveProcessLauncher,
+} from "./claude-auth.types.js";
+
+type InternalFlow = {
+  snapshot: ClaudeAuthFlowSnapshot;
+  emitter: EventEmitter;
+  process: ClaudeInteractiveProcess;
+  killTimer: NodeJS.Timeout | null;
+  expiryTimer: NodeJS.Timeout | null;
+};
+
+const DEFAULT_CANCEL_KILL_AFTER_MS = 1_000;
+const DEFAULT_FLOW_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_FLOW_TTL_MS = 10 * 60 * 1000;
+const URL_REGEX = /https?:\/\/[^\s]+/gi;
+
+function expiresAtFromNow(ms: number) {
+  return new Date(Date.now() + ms).toISOString();
+}
+
+function isExpired(snapshot: ClaudeAuthFlowSnapshot, now = new Date()) {
+  return snapshot.status === "running" && new Date(snapshot.expiresAt).getTime() <= now.getTime();
+}
+
+function withUpdatedSnapshot(flow: InternalFlow, event: ClaudeAuthEvent) {
+  flow.snapshot = {
+    ...flow.snapshot,
+    updatedAt: nowIso(),
+    events: [...flow.snapshot.events, event],
+  };
+  flow.emitter.emit("event", event);
+}
+
+function classifyInputRequirement(text: string): ClaudeAuthEvent | null {
+  const normalized = text.toLowerCase();
+  if (/enter .*code|paste .*code|verification code|authorization code|one[- ]time code/.test(normalized)) {
+    return { type: "input_required", inputType: "code", prompt: text.trim() || undefined };
+  }
+  if (/press enter|type .* and press enter|input required|enter response|continue in browser/.test(normalized)) {
+    return { type: "input_required", inputType: "text", prompt: text.trim() || undefined };
+  }
+  return null;
+}
+
+export class ClaudeAuthFlowManager implements ClaudeAuthFlowManagerPort {
+  private readonly flows = new Map<string, InternalFlow>();
+
+  constructor(
+    private readonly launcher: ClaudeInteractiveProcessLauncher,
+    private readonly statusInspector: { inspect(): Promise<ClaudeCliStatusSnapshot> },
+    private readonly options?: {
+      cwd?: string;
+      env?: NodeJS.ProcessEnv;
+      cancelKillAfterMs?: number;
+      initialArgs?: string[];
+      flowTimeoutMs?: number;
+      flowTtlMs?: number;
+      onAuthenticated?: () => Promise<void>;
+    },
+  ) {}
+
+  async start(): Promise<ClaudeAuthFlowSnapshot> {
+    const flowId = createId();
+    this.cleanupExpired();
+    const process = await this.launcher.launch({
+      args: this.options?.initialArgs ?? ["auth", "login"],
+      ...(this.options?.cwd ? { cwd: this.options.cwd } : {}),
+      ...(this.options?.env ? { env: this.options.env } : {}),
+    });
+
+    const internal: InternalFlow = {
+      snapshot: {
+        flowId,
+        status: "running",
+        startedAt: nowIso(),
+        updatedAt: nowIso(),
+        expiresAt: expiresAtFromNow(this.options?.flowTtlMs ?? DEFAULT_FLOW_TTL_MS),
+        events: [{ type: "started", flowId }],
+      },
+      emitter: new EventEmitter(),
+      process,
+      killTimer: null,
+      expiryTimer: null,
+    };
+    this.flows.set(flowId, internal);
+    internal.expiryTimer = setTimeout(() => {
+      if (internal.snapshot.status !== "running") return;
+      internal.snapshot.status = "failed";
+      withUpdatedSnapshot(internal, { type: "expired" });
+      withUpdatedSnapshot(internal, { type: "failed", code: "AUTH_FLOW_EXPIRED", message: "Claude auth flow expired" });
+      internal.process.kill("SIGTERM");
+    }, this.options?.flowTimeoutMs ?? DEFAULT_FLOW_TIMEOUT_MS);
+    internal.expiryTimer.unref();
+
+    const handleChunk = (raw: string, stream: "stdout" | "stderr") => {
+      const text = redactClaudeCliOutput(raw);
+      if (!text.trim()) return;
+      withUpdatedSnapshot(internal, { type: "output", text, stream });
+      const urls = text.match(URL_REGEX) ?? [];
+      for (const url of urls) {
+        withUpdatedSnapshot(internal, { type: "open_url", url });
+      }
+      const inputRequired = classifyInputRequirement(text);
+      if (inputRequired) {
+        withUpdatedSnapshot(internal, inputRequired);
+      }
+    };
+
+    process.onStdout((chunk) => handleChunk(chunk, "stdout"));
+    process.onStderr((chunk) => handleChunk(chunk, "stderr"));
+    process.onError((error) => {
+      if (internal.snapshot.status !== "running") return;
+      internal.snapshot.status = "failed";
+      withUpdatedSnapshot(internal, { type: "failed", code: "PROCESS_ERROR", message: redactClaudeCliOutput(error.message) });
+    });
+    process.onExit(async () => {
+      if (internal.killTimer) {
+        clearTimeout(internal.killTimer);
+        internal.killTimer = null;
+      }
+      if (internal.expiryTimer) {
+        clearTimeout(internal.expiryTimer);
+        internal.expiryTimer = null;
+      }
+      if (internal.snapshot.status === "cancelled" || internal.snapshot.status === "failed") return;
+      const status = await this.statusInspector.inspect();
+      if (status.state === "ready") {
+        try {
+          if (this.options?.onAuthenticated) {
+            await this.options.onAuthenticated();
+          }
+        } catch (error) {
+          internal.snapshot.status = "failed";
+          withUpdatedSnapshot(internal, {
+            type: "failed",
+            code: "POST_AUTH_SYNC_FAILED",
+            message: error instanceof Error ? error.message : "Claude auth post-sync failed",
+          });
+          return;
+        }
+        internal.snapshot.status = "authenticated";
+        withUpdatedSnapshot(internal, { type: "authenticated" });
+        return;
+      }
+      internal.snapshot.status = "failed";
+      withUpdatedSnapshot(internal, {
+        type: "failed",
+        code: status.state.toUpperCase(),
+        message: status.message ?? "Claude CLI auth flow ended without ready status",
+      });
+    });
+
+    return internal.snapshot;
+  }
+
+  get(flowId: string): ClaudeAuthFlowSnapshot | null {
+    this.cleanupExpired();
+    return this.flows.get(flowId)?.snapshot ?? null;
+  }
+
+  async writeInput(flowId: string, input: string): Promise<ClaudeAuthFlowSnapshot> {
+    this.cleanupExpired();
+    const flow = this.flows.get(flowId);
+    if (!flow) throw new Error(`Auth flow ${flowId} not found`);
+    if (flow.snapshot.status !== "running") throw new Error(`Auth flow ${flowId} is not running`);
+    flow.process.write(input.endsWith("\n") ? input : `${input}\n`);
+    flow.snapshot = {
+      ...flow.snapshot,
+      updatedAt: nowIso(),
+    };
+    return flow.snapshot;
+  }
+
+  async cancel(flowId: string): Promise<ClaudeAuthFlowSnapshot> {
+    const flow = this.flows.get(flowId);
+    if (!flow) throw new Error(`Auth flow ${flowId} not found`);
+    if (flow.snapshot.status !== "running") return flow.snapshot;
+    flow.snapshot.status = "cancelled";
+    withUpdatedSnapshot(flow, { type: "cancelled" });
+    if (flow.expiryTimer) {
+      clearTimeout(flow.expiryTimer);
+      flow.expiryTimer = null;
+    }
+    flow.process.kill("SIGTERM");
+    flow.killTimer = setTimeout(() => {
+      flow.process.kill("SIGKILL");
+    }, this.options?.cancelKillAfterMs ?? DEFAULT_CANCEL_KILL_AFTER_MS);
+    flow.killTimer.unref();
+    return flow.snapshot;
+  }
+
+  subscribe(flowId: string, listener: (event: ClaudeAuthEvent) => void) {
+    this.cleanupExpired();
+    const flow = this.flows.get(flowId);
+    if (!flow) return null;
+    const wrapped = (event: ClaudeAuthEvent) => listener(event);
+    flow.emitter.on("event", wrapped);
+    return () => flow.emitter.off("event", wrapped);
+  }
+
+  cleanupExpired(now = new Date()) {
+    let cleaned = 0;
+    for (const flow of this.flows.values()) {
+      if (!isExpired(flow.snapshot, now)) continue;
+      flow.snapshot.status = "failed";
+      withUpdatedSnapshot(flow, { type: "expired" });
+      withUpdatedSnapshot(flow, { type: "failed", code: "AUTH_FLOW_EXPIRED", message: "Claude auth flow expired" });
+      flow.process.kill("SIGTERM");
+      cleaned += 1;
+    }
+    return cleaned;
+  }
+
+  cancelAll(reason = "Claude auth manager shutdown") {
+    let cancelled = 0;
+    for (const flow of this.flows.values()) {
+      if (flow.snapshot.status !== "running") continue;
+      flow.snapshot.status = "cancelled";
+      withUpdatedSnapshot(flow, { type: "cancelled" });
+      flow.process.kill("SIGTERM");
+      cancelled += 1;
+    }
+    void reason;
+    return cancelled;
+  }
+}

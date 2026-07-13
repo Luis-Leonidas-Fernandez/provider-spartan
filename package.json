@@ -1,0 +1,57 @@
+{
+  "name": "@local/provider-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    "./core": "./src/core/index.ts",
+    "./provider-auth": "./src/provider-auth/core/index.ts",
+    "./provider-auth/fastify": "./src/provider-auth/fastify/index.ts",
+    "./fastify": "./src/fastify/index.ts",
+    "./standalone": "./src/standalone/index.ts"
+  },
+  "scripts": {
+    "dev:bootstrap": "./scripts/dev-bootstrap.sh up",
+    "dev:init": "./scripts/dev-bootstrap.sh init",
+    "dev:auth:codex": "./scripts/dev-bootstrap.sh codex",
+    "dev:auth:gemini": "./scripts/dev-bootstrap.sh gemini",
+    "dev:auth:claude": "./scripts/dev-bootstrap.sh claude",
+    "dev:auth:cursor": "./scripts/dev-bootstrap.sh cursor",
+    "dev:status": "./scripts/dev-bootstrap.sh status",
+    "dev:audit": "./scripts/dev-bootstrap.sh audit",
+    "dev:codex:switch": "./scripts/codex-switch-account.sh",
+    "dev": "tsx watch src/standalone/main.ts",
+    "dev:standalone": "tsx watch src/standalone/main.ts",
+    "start": "node dist/standalone/main.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.44.4",
+    "fastify": "^5.2.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.19.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.6",
+    "@typescript-eslint/eslint-plugin": "^8.63.0",
+    "@typescript-eslint/parser": "^8.63.0",
+    "drizzle-kit": "^0.31.4",
+    "eslint": "^9.19.0",
+    "globals": "^15.14.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
