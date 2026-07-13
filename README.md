@@ -18,6 +18,7 @@
 - [Qué resuelve](#qué-resuelve)
 - [Capacidades actuales](#capacidades-actuales)
 - [Modos de uso](#modos-de-uso)
+- [Adapters Node y Express](#adapters-node-y-express)
 - [Quick start](#quick-start)
 - [Provider auth embebible](#provider-auth-embebible)
 - [Rutas y contratos](#rutas-y-contratos)
@@ -53,6 +54,8 @@ La idea central es separar:
 | --- | --- |
 | Gateway OpenAI-compatible | Expone `POST /v1/chat/completions` |
 | Modo embebible | Se monta como plugin Fastify dentro de otra app |
+| Adapter Node HTTP | Expone el gateway como handler/server Node sin framework externo |
+| Adapter Express | Expone el gateway como middleware/router Express sin depender de Express en el core |
 | Core reusable | Se puede usar sin HTTP vía `createProviderGatewayModule()` |
 | Provider auth embebible | Monta OAuth y lifecycle de conexiones sobre el servidor host para Codex y Gemini |
 | Codex convenience facade | Expone `/codex/*` para dev/local y pruebas humanas |
@@ -157,6 +160,72 @@ Standalone existe para desarrollar/probar este repo aislado. El camino recomenda
 ```bash
 npm run dev:standalone
 ```
+
+---
+
+## Adapters Node y Express
+
+Además del plugin Fastify, el repo expone adapters finos para hosts Node genéricos y Express.
+
+### Node HTTP
+
+```ts
+import { createProviderGatewayNodeServer } from "@local/provider-gateway/node";
+
+const gateway = await createProviderGatewayNodeServer({
+  databaseUrl: process.env.DATABASE_URL,
+  credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
+  appApiKeyPepper: process.env.APP_API_KEY_PEPPER,
+  allowInsecureCredentialStorage: false,
+});
+
+gateway.server.listen(20128, "127.0.0.1");
+```
+
+Si lo montás detrás de un prefijo:
+
+```ts
+const gateway = await createProviderGatewayNodeServer({
+  mountPath: "/provider-gateway",
+  publicBaseUrl: "http://localhost:3000",
+  databaseUrl: process.env.DATABASE_URL,
+  credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
+  appApiKeyPepper: process.env.APP_API_KEY_PEPPER,
+  allowInsecureCredentialStorage: false,
+});
+```
+
+### Express
+
+El adapter Express no agrega `express` como dependencia obligatoria. La app host pasa su propia instancia/import.
+
+```ts
+import express from "express";
+import { createProviderGatewayExpressAdapter } from "@local/provider-gateway/express";
+
+const app = express();
+
+const gateway = createProviderGatewayExpressAdapter(express, {
+  mountPath: "/provider-gateway",
+  publicBaseUrl: "http://localhost:3000",
+  databaseUrl: process.env.DATABASE_URL,
+  credentialEncryptionKey: process.env.CREDENTIAL_ENCRYPTION_KEY,
+  appApiKeyPepper: process.env.APP_API_KEY_PEPPER,
+  allowInsecureCredentialStorage: false,
+});
+
+app.use("/provider-gateway", gateway.router);
+
+process.on("SIGTERM", async () => {
+  await gateway.close();
+});
+```
+
+Regla de arquitectura:
+
+- Node/Fastify/Express son **wrappers**.
+- La lógica real sigue viviendo en `createProviderGatewayModule()`.
+- Otros lenguajes deben integrarse por HTTP/OpenAPI, no con adapters nativos duplicados.
 
 ---
 

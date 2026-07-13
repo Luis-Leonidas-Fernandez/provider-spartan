@@ -11,6 +11,8 @@
     "./provider-auth": "./src/provider-auth/core/index.ts",
     "./provider-auth/fastify": "./src/provider-auth/fastify/index.ts",
     "./fastify": "./src/fastify/index.ts",
+    "./node": "./src/node/index.ts",
+    "./express": "./src/express/index.ts",
     "./standalone": "./src/standalone/index.ts"
   },
   "scripts": {
