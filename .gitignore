@@ -18,8 +18,8 @@ tmp_oauth_repro2.db
 # Build / coverage
 dist/
 coverage/
+*.tgz
 
 # OS / editor noise
 .DS_Store
 *.log
-

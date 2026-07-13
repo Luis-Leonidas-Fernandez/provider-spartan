@@ -21,7 +21,7 @@ Ejemplo típico:
 
 ```ts
 import Fastify from "fastify";
-import { providerGatewayPlugin } from "@local/provider-gateway/fastify";
+import { providerGatewayPlugin } from "provider-spartan/fastify";
 
 const app = Fastify();
 
@@ -43,9 +43,9 @@ Si además querés conexión de cuentas/suscripciones:
 
 ```ts
 import Fastify from "fastify";
-import { createProviderGatewayModule } from "@local/provider-gateway/core";
-import { providerGatewayPlugin } from "@local/provider-gateway/fastify";
-import { providerAuthPlugin } from "@local/provider-gateway/provider-auth/fastify";
+import { createProviderGatewayModule } from "provider-spartan/core";
+import { providerGatewayPlugin } from "provider-spartan/fastify";
+import { providerAuthPlugin } from "provider-spartan/provider-auth/fastify";
 
 const app = Fastify();
 const gateway = createProviderGatewayModule({
@@ -74,7 +74,7 @@ await app.register(providerAuthPlugin, {
 Si no querés HTTP interno:
 
 ```ts
-import { createProviderGatewayModule } from "@local/provider-gateway/core";
+import { createProviderGatewayModule } from "provider-spartan/core";
 
 const gateway = createProviderGatewayModule({
   databaseUrl,

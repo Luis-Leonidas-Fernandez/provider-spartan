@@ -19,6 +19,7 @@
 - [Capacidades actuales](#capacidades-actuales)
 - [Modos de uso](#modos-de-uso)
 - [Adapters Node y Express](#adapters-node-y-express)
+- [Primer paquete local](#primer-paquete-local)
 - [Quick start](#quick-start)
 - [Provider auth embebible](#provider-auth-embebible)
 - [Rutas y contratos](#rutas-y-contratos)
@@ -96,8 +97,8 @@ La idea central es separar:
 
 | Modo | Cuándo usarlo | Entry point |
 | --- | --- | --- |
-| **Core reusable** | Querés usar el runtime directo desde código | `@local/provider-gateway/core` |
-| **Plugin embebible** | Tu app host ya tiene Fastify y querés montar rutas | `@local/provider-gateway/fastify` |
+| **Core reusable** | Querés usar el runtime directo desde código | `provider-spartan/core` |
+| **Plugin embebible** | Tu app host ya tiene Fastify y querés montar rutas | `provider-spartan/fastify` |
 | **Standalone** | Querés desarrollar o probar el módulo aislado | `npm run dev:standalone` |
 
 ---
@@ -108,7 +109,7 @@ La idea central es separar:
 
 ```ts
 import Fastify from "fastify";
-import { providerGatewayPlugin } from "@local/provider-gateway/fastify";
+import { providerGatewayPlugin } from "provider-spartan/fastify";
 
 const app = Fastify();
 
@@ -135,7 +136,7 @@ Rutas resultantes típicas:
 ### 2) Core directo
 
 ```ts
-import { createProviderGatewayModule } from "@local/provider-gateway/core";
+import { createProviderGatewayModule } from "provider-spartan/core";
 
 const gateway = createProviderGatewayModule({
   databaseUrl: process.env.DATABASE_URL,
@@ -170,7 +171,7 @@ Además del plugin Fastify, el repo expone adapters finos para hosts Node genér
 ### Node HTTP
 
 ```ts
-import { createProviderGatewayNodeServer } from "@local/provider-gateway/node";
+import { createProviderGatewayNodeServer } from "provider-spartan/node";
 
 const gateway = await createProviderGatewayNodeServer({
   databaseUrl: process.env.DATABASE_URL,
@@ -201,7 +202,7 @@ El adapter Express no agrega `express` como dependencia obligatoria. La app host
 
 ```ts
 import express from "express";
-import { createProviderGatewayExpressAdapter } from "@local/provider-gateway/express";
+import { createProviderGatewayExpressAdapter } from "provider-spartan/express";
 
 const app = express();
 
@@ -229,6 +230,54 @@ Regla de arquitectura:
 
 ---
 
+## Primer paquete local
+
+El primer objetivo de packaging es **Node embebible limpio**, no daemon universal todavía.
+
+Scripts relevantes:
+
+```bash
+npm run build:package
+npm run pack:dry
+npm run pack:local
+```
+
+Qué hace cada uno:
+
+| Script | Qué hace |
+| --- | --- |
+| `build:package` | compila solo runtime distribuible a `dist/` y copia assets de runtime como migraciones SQL |
+| `pack:dry` | muestra qué entraría en el tarball del paquete |
+| `pack:local` | compila y genera el `.tgz` local con `npm pack` |
+
+Flujo recomendado:
+
+```bash
+npm run build:package
+npm run pack:dry
+npm run pack:local
+```
+
+Después, en otra app Node:
+
+```bash
+npm install ../provider/provider-spartan-0.1.0.tgz
+```
+
+Y en el backend host:
+
+```ts
+import { createProviderGatewayExpressAdapter } from "provider-spartan/express";
+```
+
+Nota:
+
+- el paquete publicado usa `dist/*`, no `src/*`
+- las migraciones SQL se copian a `dist/db/migrations`
+- `provider-spartan` sigue en `0.1.0` como foundation interna; todavía no es release pública estable `1.0.0`
+
+---
+
 ## Provider auth embebible
 
 `provider-auth` está pensado para **conexiones vivas de cuentas/suscripciones**, no para administrar API keys.
@@ -237,8 +286,8 @@ Las API keys siguen en el slice `credential`.
 
 ```ts
 import Fastify from "fastify";
-import { createProviderGatewayModule } from "@local/provider-gateway/core";
-import { providerAuthPlugin } from "@local/provider-gateway/provider-auth/fastify";
+import { createProviderGatewayModule } from "provider-spartan/core";
+import { providerAuthPlugin } from "provider-spartan/provider-auth/fastify";
 
 const app = Fastify();
 const gateway = createProviderGatewayModule({

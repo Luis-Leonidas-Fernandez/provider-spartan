@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { providerGatewayPlugin } from "@local/provider-gateway/fastify";
+import { providerGatewayPlugin } from "provider-spartan/fastify";
 
 const app = Fastify({ logger: true });
 

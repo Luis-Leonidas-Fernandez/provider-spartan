@@ -54,7 +54,7 @@ Para una app cliente real, preferí montar `providerGatewayPlugin`. Así quedan 
 
 ```ts
 import Fastify from "fastify";
-import { providerGatewayPlugin } from "@local/provider-gateway/fastify";
+import { providerGatewayPlugin } from "provider-spartan/fastify";
 
 const app = Fastify();
 
@@ -82,8 +82,8 @@ La app host pone el servidor. Si necesitás solamente auth/lifecycle sin montar 
 
 ```ts
 import Fastify from "fastify";
-import { createProviderGatewayModule } from "@local/provider-gateway/core";
-import { providerAuthPlugin } from "@local/provider-gateway/provider-auth/fastify";
+import { createProviderGatewayModule } from "provider-spartan/core";
+import { providerAuthPlugin } from "provider-spartan/provider-auth/fastify";
 
 const app = Fastify();
 const gateway = createProviderGatewayModule({
