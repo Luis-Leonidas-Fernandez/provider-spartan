@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./asset/spartan_log.png" alt="Provider Spartan" width="360">
+  <img src="./asset/spartan_log.png" alt="Provider Spartan" width="100%">
 </p>
 
 <p align="center">
