@@ -561,6 +561,7 @@ Documentación:
 
 | Documento | Para qué sirve |
 | --- | --- |
+| `docs/INSTALLATION_NON_TECHNICAL_GUIDE.md` | Guía única para instalar Spartan, generar la API key y conectar una app cliente |
 | `docs/PROVIDER_AUTH_EMBEDDING_GUIDE.md` | Integrar auth embebible y entender lifecycle |
 | `docs/PROVIDER_INTEGRATION_GUIDE.md` | Integrar gateway/core en otra app |
 | `docs/API_REFERENCE.md` | Ver endpoints, responses y errores comunes |
