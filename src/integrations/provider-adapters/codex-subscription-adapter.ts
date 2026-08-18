@@ -1,12 +1,15 @@
-import { GatewayTimeoutError } from "../../core/errors.js";
+import { BadGatewayError, GatewayTimeoutError } from "../../core/errors.js";
 import type {
   ProviderAdapter,
   ProviderAdapterContext,
   ProviderChatCompletionRequest,
   ProviderChatCompletionResponse,
   ProviderConnectionResult,
+  ProviderImageGenerationRequest,
+  ProviderImageGenerationResponse,
   ProviderUsage,
 } from "../../shared/provider-runtime/provider-adapter.js";
+import { createProviderRequestAbortScope } from "../../shared/provider-runtime/provider-request-abort.js";
 
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
@@ -63,6 +66,9 @@ function toCodexInput(messages: ProviderChatCompletionRequest["messages"]): Code
 function normalizeUsage(usage: unknown): ProviderUsage | undefined {
   if (!usage || typeof usage !== "object") return undefined;
   const record = usage as Record<string, unknown>;
+  if (![record.input_tokens, record.output_tokens, record.total_tokens].some((value) => typeof value === "number")) {
+    return undefined;
+  }
   const inputTokens = typeof record.input_tokens === "number" ? record.input_tokens : 0;
   const outputTokens = typeof record.output_tokens === "number" ? record.output_tokens : 0;
   const totalTokens = typeof record.total_tokens === "number" ? record.total_tokens : inputTokens + outputTokens;
@@ -283,24 +289,82 @@ function parseEventStreamPayload(parsedEvents: ParsedSseEvent[]) {
   };
 }
 
+
+function extractImageData(responseBody: Record<string, unknown>) {
+  const output = Array.isArray(responseBody.output) ? responseBody.output : [];
+  const images: Array<{ b64_json?: string; url?: string; revised_prompt?: string }> = [];
+
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    if (record.type === "image_generation_call" && typeof record.result === "string" && record.result.trim()) {
+      images.push({ b64_json: record.result });
+    }
+    const content = Array.isArray(record.content) ? record.content : [];
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const partRecord = part as Record<string, unknown>;
+      if (typeof partRecord.b64_json === "string" && partRecord.b64_json.trim()) images.push({ b64_json: partRecord.b64_json });
+      if (typeof partRecord.url === "string" && partRecord.url.trim()) images.push({ url: partRecord.url });
+    }
+  }
+
+  return images;
+}
+
+
+function summarizeImageOutput(responseBody: Record<string, unknown> | null) {
+  if (!responseBody) return "no_parsed_response";
+  const output = Array.isArray(responseBody.output) ? responseBody.output : [];
+  return output.slice(0, 5).map((item) => {
+    if (!item || typeof item !== "object") return "non_object";
+    const record = item as Record<string, unknown>;
+    const content = Array.isArray(record.content) ? record.content : [];
+    const contentTypes = content.map((part) => part && typeof part === "object" ? String((part as Record<string, unknown>).type ?? "unknown") : "non_object").join("+");
+    const textPreview = content.map(readTextPart).filter(Boolean).join(" ");
+    return `${String(record.type ?? "unknown")}:${String(record.status ?? "no_status")}:${contentTypes}:${sanitizePreview(textPreview, 120)}`;
+  }).join("|") || "empty_output";
+}
+
+function buildImageRequestBody(request: ProviderImageGenerationRequest) {
+  return {
+    model: request.model,
+    stream: true,
+    store: false,
+    input: [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: request.prompt }],
+      },
+    ],
+    tools: [{ type: "image_generation", ...(request.size ? { size: request.size } : {}), ...(request.quality ? { quality: request.quality } : {}) }],
+    tool_choice: "required",
+  };
+}
+
 export class CodexSubscriptionAdapter implements ProviderAdapter {
   readonly providerType = "codex_subscription";
+  readonly imageGenerationCapabilities = {
+    maxImages: 1,
+    supportsSize: true,
+    supportsQuality: true,
+    supportedResponseFormats: ["b64_json"] as const,
+  };
 
   async chatCompletion(
     request: ProviderChatCompletionRequest,
     context: ProviderAdapterContext,
   ): Promise<ProviderChatCompletionResponse> {
-    const controller = new AbortController();
     const timeoutMs = context.timeoutMs ?? 45_000;
     const startedAt = Date.now();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const abortScope = createProviderRequestAbortScope(context.signal, timeoutMs);
 
     try {
       const response = await fetch(resolveBaseUrl(context), {
         method: "POST",
         headers: buildHeaders(context),
         body: JSON.stringify(buildRequestBody(request)),
-        signal: controller.signal,
+        signal: abortScope.signal,
       });
 
       const durationMs = Date.now() - startedAt;
@@ -384,12 +448,112 @@ export class CodexSubscriptionAdapter implements ProviderAdapter {
         choices: extractChoices(content),
       };
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
+      if (abortScope.getSource() === "external") {
+        throw new BadGatewayError("Codex request cancelled because the client disconnected", "process_cancelled");
+      }
+      if (abortScope.getSource() === "timeout" || (error instanceof Error && error.name === "AbortError")) {
         throw new GatewayTimeoutError();
       }
       throw error;
     } finally {
-      clearTimeout(timeout);
+      abortScope.cleanup();
+    }
+  }
+
+
+  async imageGeneration(
+    request: ProviderImageGenerationRequest,
+    context: ProviderAdapterContext,
+  ): Promise<ProviderImageGenerationResponse> {
+    const timeoutMs = context.timeoutMs ?? 120_000;
+    const startedAt = Date.now();
+    const abortScope = createProviderRequestAbortScope(context.signal, timeoutMs);
+
+    try {
+      const response = await fetch(resolveBaseUrl(context), {
+        method: "POST",
+        headers: buildHeaders(context),
+        body: JSON.stringify(buildImageRequestBody(request)),
+        signal: abortScope.signal,
+      });
+
+      const durationMs = Date.now() - startedAt;
+      const { responseText, parsedEvents } = await readResponseAsText(response);
+      const isEventStream = (response.headers.get("content-type") || "").includes("text/event-stream")
+        || parsedEvents.length > 0
+        || /^\s*(event:|data:)/m.test(responseText);
+      let parsed: Record<string, unknown> | null = null;
+      let sseSummary:
+        | { eventTypes: string[]; eventCount: number; terminalEventSeen: boolean }
+        | undefined;
+
+      if (isEventStream) {
+        const parsedEventStream = parseEventStreamPayload(parsedEvents);
+        parsed = parsedEventStream.payload;
+        sseSummary = {
+          eventTypes: parsedEventStream.eventTypes,
+          eventCount: parsedEventStream.eventCount,
+          terminalEventSeen: parsedEventStream.terminalEventSeen,
+        };
+      } else {
+        try {
+          parsed = responseText ? JSON.parse(responseText) as Record<string, unknown> : null;
+        } catch {
+          parsed = null;
+        }
+      }
+
+      if (!response.ok) {
+        const errorObject = parsed?.error && typeof parsed.error === "object" ? parsed.error as Record<string, unknown> : null;
+        const message = typeof errorObject?.message === "string" ? errorObject.message : responseText || `Provider responded with HTTP ${response.status}`;
+        return {
+          ok: false,
+          status: "failed",
+          model: request.model,
+          data: [],
+          durationMs,
+          providerRequestId: response.headers.get("x-request-id") ?? null,
+          error: message,
+          rawResponse: { status: response.status, rawBodyPreview: sanitizePreview(responseText) },
+        };
+      }
+
+      const data = parsed ? extractImageData(parsed) : [];
+      const usage = normalizeUsage(parsed?.usage);
+      return {
+        ok: data.length > 0,
+        status: data.length > 0 ? "success" : "failed",
+        model: parsed && typeof parsed.model === "string" ? parsed.model : request.model,
+        data,
+        durationMs,
+        created: typeof parsed?.created === "number" ? parsed.created : Math.floor(startedAt / 1000),
+        providerRequestId: response.headers.get("x-request-id") ?? null,
+        ...(usage ? { usage } : {}),
+        rawResponse: {
+          ...(parsed ? { id: parsed.id, object: parsed.object, created_at: parsed.created_at } : {}),
+          statusCode: response.status,
+          responseTopLevelKeys: parsed ? Object.keys(parsed).slice(0, 25) : [],
+          rawBodyPreview: sanitizePreview(responseText),
+          ...(isEventStream ? {
+            sseEventTypes: sseSummary?.eventTypes ?? [],
+            sseEventCount: sseSummary?.eventCount ?? 0,
+            sseTerminalEventSeen: sseSummary?.terminalEventSeen ?? false,
+          } : {}),
+        },
+        ...(data.length === 0 ? {
+          error: `Codex response did not include image data; topLevelKeys=${parsed ? Object.keys(parsed).slice(0, 12).join(",") : "none"}; output=${summarizeImageOutput(parsed)}; preview=${sanitizePreview(responseText, 220)}`,
+        } : {}),
+      };
+    } catch (error) {
+      if (abortScope.getSource() === "external") {
+        throw new BadGatewayError("Codex image generation cancelled because the client disconnected", "process_cancelled");
+      }
+      if (abortScope.getSource() === "timeout" || (error instanceof Error && error.name === "AbortError")) {
+        throw new GatewayTimeoutError();
+      }
+      throw error;
+    } finally {
+      abortScope.cleanup();
     }
   }
 

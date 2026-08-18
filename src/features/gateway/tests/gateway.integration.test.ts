@@ -176,4 +176,139 @@ describe("gateway integration", () => {
     const usageEvents = usageEventsResponse.json() as Array<{ usageSource: string }>;
     expect(usageEvents[0]?.usageSource).toBe("estimated");
   });
+
+  it("routes openai image models to the functional OpenAI-compatible transport", async () => {
+    const app = await createTestApp();
+    cleanups.push(() => app.close());
+
+    const appClientResponse = await app.inject({ method: "POST", url: "/app-clients", payload: { name: "images-client" } });
+    const appClient = appClientResponse.json() as { appClient: { id: string }; apiKey: string };
+    const planResponse = await app.inject({
+      method: "POST",
+      url: "/subscription-plans",
+      payload: {
+        name: "images",
+        monthlyRequestLimit: 100,
+        monthlyTokenLimit: 100000,
+        monthlyBudgetUsd: 20,
+        allowedProvidersJson: "[]",
+        allowedModelsJson: "[]",
+        isActive: true,
+      },
+    });
+    const plan = planResponse.json() as { id: string };
+    await app.inject({
+      method: "POST",
+      url: "/app-subscriptions",
+      payload: {
+        appClientId: appClient.appClient.id,
+        planId: plan.id,
+        status: "active",
+        startsAt: "2024-01-01T00:00:00.000Z",
+      },
+    });
+    const providerResponse = await app.inject({
+      method: "POST",
+      url: "/providers",
+      payload: {
+        name: "OpenAI",
+        providerType: "openai",
+        accessMode: "api_key",
+        baseUrl: "https://api.openai.test/v1",
+        defaultModel: "gpt-image-2",
+        isEnabled: true,
+        isDefault: false,
+        supportsUsageReporting: false,
+        supportsStreaming: false,
+      },
+    });
+    const provider = providerResponse.json() as { id: string };
+    await app.inject({
+      method: "POST",
+      url: `/providers/${provider.id}/auth/api-key`,
+      payload: { apiKey: "openai-test-key" },
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      created: 123,
+      data: [{ b64_json: "base64-image" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json", "x-request-id": "image_req_1" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const terminalEvents: string[] = [];
+    ((app as unknown as {
+      container: {
+        usage: {
+          eventBus: {
+            subscribe: (listener: (event: { type: string }) => void) => () => void;
+          };
+        };
+      };
+    }).container.usage.eventBus.subscribe((event) => {
+      if (event.type === "request.completed" || event.type === "request.failed") {
+        terminalEvents.push(event.type);
+      }
+    }));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/images/generations",
+      headers: { authorization: `Bearer ${appClient.apiKey}` },
+      payload: {
+        model: "openai/gpt-image-2",
+        prompt: "Un astronauta tomando mate",
+        n: 1,
+        size: "1024x1024",
+        quality: "high",
+        response_format: "b64_json",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      created: 123,
+      data: [{ b64_json: "base64-image" }],
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.openai.test/v1/images/generations");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer openai-test-key");
+    expect(JSON.parse(String(init.body))).toEqual({
+      model: "gpt-image-2",
+      prompt: "Un astronauta tomando mate",
+      n: 1,
+      size: "1024x1024",
+      quality: "high",
+    });
+    expect(terminalEvents).toEqual(["request.completed"]);
+
+    const usageResponse = await app.inject({
+      method: "GET",
+      url: "/usage/events",
+      headers: { authorization: `Bearer ${appClient.apiKey}` },
+    });
+    const usageEvents = usageResponse.json() as Array<{ usageSource: string; totalTokens: number; estimatedCostUsd: number | null }>;
+    expect(usageEvents[0]).toEqual(expect.objectContaining({
+      usageSource: "unavailable",
+      totalTokens: 0,
+      estimatedCostUsd: null,
+    }));
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      error: { message: "upstream image failure" },
+    }), { status: 500, headers: { "content-type": "application/json" } }));
+    const failedResponse = await app.inject({
+      method: "POST",
+      url: "/v1/images/generations",
+      headers: { authorization: `Bearer ${appClient.apiKey}` },
+      payload: {
+        model: "openai/gpt-image-2",
+        prompt: "Fallá de forma controlada",
+      },
+    });
+
+    expect(failedResponse.statusCode).toBe(502);
+    expect(terminalEvents).toEqual(["request.completed", "request.failed"]);
+  });
 });

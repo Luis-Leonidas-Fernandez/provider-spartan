@@ -80,6 +80,9 @@ export function createProviderGatewayModule(options: ProviderGatewayModuleOption
     async handleChatCompletion(input: Parameters<typeof gateway.handleChatCompletion.execute>[0]) {
       return module.gateway.handleChatCompletion.execute(input);
     },
+    async handleImageGeneration(input: Parameters<typeof gateway.handleImageGeneration.execute>[0]) {
+      return module.gateway.handleImageGeneration.execute(input);
+    },
     async getUsageOverview() {
       return module.usage.overview.execute();
     },

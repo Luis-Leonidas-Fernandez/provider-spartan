@@ -14,6 +14,15 @@ export type GatewayChatCompletionRequest = {
   stream?: boolean | undefined;
 };
 
+export type GatewayImageGenerationRequest = {
+  model: string;
+  prompt: string;
+  n?: number | undefined;
+  size?: string | undefined;
+  quality?: string | undefined;
+  response_format?: "url" | "b64_json" | undefined;
+};
+
 export type ParsedProviderModel = {
   providerPrefix?: string;
   modelName: string;

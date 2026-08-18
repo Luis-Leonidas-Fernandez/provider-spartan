@@ -28,7 +28,7 @@ import { KimiAdapter } from "../../integrations/provider-adapters/kimi-adapter.j
 import { CodexSubscriptionAdapter } from "../../integrations/provider-adapters/codex-subscription-adapter.js";
 import { CodexOAuthClient } from "../../integrations/oauth/codex-oauth-client.js";
 import { GeminiOAuthClient } from "../../integrations/oauth/gemini-oauth-client.js";
-import { OpenAIAdapterStub } from "../../integrations/provider-adapters/openai-adapter.stub.js";
+import { OpenAIAdapter } from "../../integrations/provider-adapters/openai-adapter.js";
 import { GeminiAntigravityRuntimeAdapter } from "../../integrations/provider-adapters/gemini-antigravity-runtime-adapter.js";
 import { SupervisedGeminiCliRunner } from "../../integrations/provider-adapters/supervised-gemini-cli-runner.js";
 import { DEFAULT_ANTIGRAVITY_CLI_BIN, DEFAULT_ANTIGRAVITY_CLI_TIMEOUT_MS, resolveGeminiRuntimeSurface } from "../../shared/provider-runtime/gemini-runtime.js";
@@ -331,7 +331,7 @@ export function createCompositionContext(options: ProviderGatewayModuleOptions) 
       new MiniMaxAdapter(),
       new KimiAdapter(),
       new CodexSubscriptionAdapter(),
-      new OpenAIAdapterStub(),
+      new OpenAIAdapter(),
       geminiRuntimeAdapter,
       new ClaudeCodeSetupTokenRuntimeAdapter({
         cliBin: claudeCliBin,

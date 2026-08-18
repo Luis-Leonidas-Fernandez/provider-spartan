@@ -470,6 +470,75 @@ Eso ya está probado en gateway para:
 
 y funcionalmente cubierto para Codex.
 
+### `POST /v1/images/generations`
+
+Genera imágenes con un provider que declare esa capacidad.
+
+Headers:
+
+```http
+Authorization: Bearer <APP_CLIENT_API_KEY>
+Content-Type: application/json
+```
+
+Ejemplo OpenAI API con API key configurada en el provider. Reemplazá el
+placeholder por un modelo de imagen habilitado en tu proyecto:
+
+```json
+{
+  "model": "openai/<OPENAI_IMAGE_MODEL_AVAILABLE_IN_YOUR_ACCOUNT>",
+  "prompt": "Un astronauta tomando mate, ilustración editorial",
+  "n": 1,
+  "size": "1024x1024",
+  "quality": "high",
+  "response_format": "b64_json"
+}
+```
+
+Ejemplo Codex con suscripción conectada. Acá debe usarse un modelo principal de
+tu cuenta que tenga habilitada la tool `image_generation`:
+
+```json
+{
+  "model": "codex/<CODEX_MAINLINE_MODEL_WITH_IMAGE_TOOL>",
+  "prompt": "Un astronauta tomando mate, ilustración editorial",
+  "n": 1,
+  "size": "1024x1024",
+  "quality": "high",
+  "response_format": "b64_json"
+}
+```
+
+Respuesta:
+
+```json
+{
+  "created": 1720000000,
+  "data": [
+    { "b64_json": "<BASE64_DE_LA_IMAGEN>" }
+  ]
+}
+```
+
+Soporte actual:
+
+| Provider | Generación | `n` | Formatos |
+| --- | --- | --- | --- |
+| `openai` | Sí, Image API oficial sobre transporte compatible | hasta 10; el modelo puede imponer un límite menor | `b64_json` |
+| `custom_openai_compatible` | Sí, según el upstream configurado | hasta 10; el upstream puede imponer un límite menor | `url`, `b64_json` |
+| `minimax` / `kimi` | Heredan el transporte compatible; depende del endpoint real | según upstream | según upstream |
+| `codex_subscription` | Sí, mediante la tool `image_generation` | 1 | `b64_json` |
+| Gemini, Claude, Cursor | No implementado | — | — |
+
+Reglas importantes:
+
+- `size` usa `auto` o formato `ANCHOxALTO`, por ejemplo `1024x1024`.
+- El gateway rechaza con `422` los parámetros que el adapter declara como no soportados; no los ignora silenciosamente.
+- Si el provider no informa tokens, el evento de usage queda con `usageSource=unavailable` y costo `null`. Los ceros preservan el schema, pero **no representan consumo medido**.
+- Para OpenAI API, consultá el catálogo oficial y usá un modelo de imagen realmente habilitado en tu proyecto. El gateway no descubre todavía entitlements de imágenes. OpenAI API requiere API key y acceso/facturación propios; una suscripción ChatGPT no equivale a crédito API.
+- Para Codex/Responses se usa un modelo principal que pueda invocar la tool de imagen, no un modelo `gpt-image-*` directo. Que un modelo responda texto no prueba automáticamente que la tool esté habilitada en esa cuenta.
+- Referencia oficial: [OpenAI Image generation](https://developers.openai.com/api/docs/guides/image-generation).
+
 ---
 
 ## 6) Auditoría

@@ -27,17 +27,21 @@ export function buildResponseMetadata(input: {
   outputTokens?: number | undefined;
   cachedInputTokens?: number | undefined;
   totalTokens?: number | undefined;
+  usageAvailable?: boolean | undefined;
   responseSizeApprox: number;
   status: string;
 }) {
+  const usageAvailable = input.usageAvailable
+    ?? [input.inputTokens, input.outputTokens, input.cachedInputTokens, input.totalTokens].some((value) => value !== undefined);
   return {
     ...(input.providerRequestId !== undefined ? { providerRequestId: input.providerRequestId } : {}),
-    tokenCounts: {
+    usageAvailable,
+    ...(usageAvailable ? { tokenCounts: {
       input: input.inputTokens ?? 0,
       output: input.outputTokens ?? 0,
       cachedInput: input.cachedInputTokens ?? 0,
       total: input.totalTokens ?? 0,
-    },
+    } } : {}),
     responseSizeApprox: input.responseSizeApprox,
     status: input.status,
   };

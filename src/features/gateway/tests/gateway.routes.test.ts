@@ -114,4 +114,17 @@ describe("gateway route guards", () => {
     expect(response.statusCode).toBe(403);
     expect(response.json().message).toContain("credential");
   });
+
+  it("exposes image generation route behind app-client auth", async () => {
+    const ctx = await setupBase();
+    await ctx.app.inject({ method: "PUT", url: `/app-clients/${ctx.appClientId}`, payload: { isActive: false } });
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/v1/images/generations",
+      headers: { authorization: `Bearer ${ctx.apiKey}` },
+      payload: { model: "MiniMax-M3", prompt: "imagen editorial" },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
 });

@@ -100,6 +100,8 @@ npm run dev:standalone
 - `OpenAICompatibleAdapter` implementado
 - `MiniMaxAdapter` y `KimiAdapter` actúan como wrappers del contrato OpenAI-compatible
 - si el provider no devuelve usage, el sistema estima tokens y marca `usageSource=estimated`
+- en generación de imágenes no se inventan tokens: si el upstream no reporta usage, se marca `usageSource=unavailable`
+- imágenes están implementadas para `openai`, `custom_openai_compatible`, sus wrappers cuando el upstream las soporte, y `codex_subscription`
 - para auth embebible real, hoy están cubiertos **Codex y Gemini**
 - para runtime local + gateway, hoy están cubiertos **Codex, Gemini y Claude**
 

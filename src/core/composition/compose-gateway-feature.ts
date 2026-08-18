@@ -1,5 +1,6 @@
 import { AuthenticateGatewayRequestUseCase } from "../../features/gateway/application/use-cases/authenticate-gateway-request.use-case.js";
 import { HandleChatCompletionUseCase } from "../../features/gateway/application/use-cases/handle-chat-completion.use-case.js";
+import { HandleImageGenerationUseCase } from "../../features/gateway/application/use-cases/handle-image-generation.use-case.js";
 import { ParseProviderModelUseCase } from "../../features/gateway/application/use-cases/parse-provider-model.use-case.js";
 import { RecordRequestLogUseCase } from "../../features/request-log/application/use-cases/record-request-log.use-case.js";
 import { RecordUsageEventUseCase } from "../../features/usage/application/use-cases/record-usage-event.use-case.js";
@@ -35,6 +36,22 @@ export function composeGatewayFeature(
       context.adapterRegistry,
       parseProviderModel,
       context.usageTracker,
+      { record: async (event) => { await recordUsageEvent.execute(event); } },
+      { record: async (log) => { await recordRequestLog.execute(log); } },
+      context.eventBus,
+      dependencies.getDefaultProviderConnectionByProviderId,
+      dependencies.getDefaultProviderAuthStatus,
+      dependencies.getValidProviderCredential,
+    ),
+    handleImageGeneration: new HandleImageGenerationUseCase(
+      dependencies.validateKey,
+      context.appClientRepository,
+      context.appSubscriptionRepository,
+      context.providerRepository,
+      dependencies.ensureFresh,
+      context.credentialCipher,
+      context.adapterRegistry,
+      parseProviderModel,
       { record: async (event) => { await recordUsageEvent.execute(event); } },
       { record: async (log) => { await recordRequestLog.execute(log); } },
       context.eventBus,
