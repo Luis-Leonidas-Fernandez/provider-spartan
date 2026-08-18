@@ -402,6 +402,12 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:20128/v1/chat/completions"
 
 Si recibís respuesta del modelo, la API key funciona.
 
+### Nota sobre generación de imágenes
+
+Para generar imágenes desde Spartan hoy necesitás configurar un provider con API real de imágenes, por ejemplo **OpenAI Platform** con una `OPENAI_API_KEY`.
+
+Una suscripción **ChatGPT Plus** sirve para generar imágenes dentro de ChatGPT, pero no le da a Spartan acceso externo a imágenes por Codex.
+
 ---
 
 ## 12. Instalar Spartan como paquete local en otra app

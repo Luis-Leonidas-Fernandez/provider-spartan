@@ -495,19 +495,7 @@ placeholder por un modelo de imagen habilitado en tu proyecto:
 }
 ```
 
-Ejemplo Codex con suscripción conectada. Acá debe usarse un modelo principal de
-tu cuenta que tenga habilitada la tool `image_generation`:
-
-```json
-{
-  "model": "codex/<CODEX_MAINLINE_MODEL_WITH_IMAGE_TOOL>",
-  "prompt": "Un astronauta tomando mate, ilustración editorial",
-  "n": 1,
-  "size": "1024x1024",
-  "quality": "high",
-  "response_format": "b64_json"
-}
-```
+> Importante: este endpoint **no usa tu suscripción ChatGPT Plus**. Para imágenes hoy necesitás un provider con API real de imágenes, por ejemplo OpenAI Platform con API key y billing/credit propio.
 
 Respuesta:
 
@@ -527,7 +515,7 @@ Soporte actual:
 | `openai` | Sí, Image API oficial sobre transporte compatible | hasta 10; el modelo puede imponer un límite menor | `b64_json` |
 | `custom_openai_compatible` | Sí, según el upstream configurado | hasta 10; el upstream puede imponer un límite menor | `url`, `b64_json` |
 | `minimax` / `kimi` | Heredan el transporte compatible; depende del endpoint real | según upstream | según upstream |
-| `codex_subscription` | Sí, mediante la tool `image_generation` | 1 | `b64_json` |
+| `codex_subscription` | No soportado para imágenes hoy | — | — |
 | Gemini, Claude, Cursor | No implementado | — | — |
 
 Reglas importantes:
@@ -536,7 +524,8 @@ Reglas importantes:
 - El gateway rechaza con `422` los parámetros que el adapter declara como no soportados; no los ignora silenciosamente.
 - Si el provider no informa tokens, el evento de usage queda con `usageSource=unavailable` y costo `null`. Los ceros preservan el schema, pero **no representan consumo medido**.
 - Para OpenAI API, consultá el catálogo oficial y usá un modelo de imagen realmente habilitado en tu proyecto. El gateway no descubre todavía entitlements de imágenes. OpenAI API requiere API key y acceso/facturación propios; una suscripción ChatGPT no equivale a crédito API.
-- Para Codex/Responses se usa un modelo principal que pueda invocar la tool de imagen, no un modelo `gpt-image-*` directo. Que un modelo responda texto no prueba automáticamente que la tool esté habilitada en esa cuenta.
+- `codex_subscription` / ChatGPT Plus no debe presentarse como provider de imágenes. En pruebas reales, Codex respondió texto/stream pero no devolvió `image_generation_call`, `b64_json` ni datos de imagen.
+- Gemini/Antigravity, Claude y Cursor no tienen generación de imágenes implementada en Spartan.
 - Referencia oficial: [OpenAI Image generation](https://developers.openai.com/api/docs/guides/image-generation).
 
 ---

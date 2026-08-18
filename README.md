@@ -550,6 +550,7 @@ Documentación:
 
 ## Limitaciones actuales
 
+- la generación de imágenes requiere un provider con API real de imágenes, por ejemplo OpenAI Platform con `OPENAI_API_KEY`; ChatGPT Plus/Codex subscription no expone imágenes para Spartan hoy
 - `provider-auth` embebible hoy cubre Codex y Gemini, no Claude
 - los providers futuros deben entrar por strategy, no por lógica especial en `provider-auth/core`
 - el refactor grande de multi-cuenta avanzada todavía no está completo
